@@ -120,7 +120,7 @@ services:
     image: cgr.dev/chainguard/minio
     restart: always
     entrypoint: sh
-    # create the 'langfuse' bucket before starting the service
+    user: root
     env_file:
       - .env
     command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
