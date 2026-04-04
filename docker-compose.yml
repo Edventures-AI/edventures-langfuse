@@ -13,7 +13,11 @@ services:
       clickhouse:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:3030/api/health"]
+      test:
+        [
+          "CMD-SHELL",
+          "ip=$(hostname -i | awk '{print $1}'); wget -q --spider http://$ip:3030/api/health",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -86,7 +90,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "wget -q --spider http://localhost:3000/langfuse/api/public/health && wget -q --spider http://localhost:3000/langfuse/api/public/ready",
+          "ip=$(hostname -i | awk '{print $1}'); wget -q --spider http://$ip:3000/langfuse/api/public/health && wget -q --spider http://$ip:3000/langfuse/api/public/ready",
         ]
       interval: 10s
       timeout: 5s
