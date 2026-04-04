@@ -46,7 +46,7 @@ export class ClickhouseWriter {
       [TableName.ObservationsBatchStaging]: [],
       [TableName.BlobStorageFileLog]: [],
       [TableName.DatasetRunItems]: [],
-      [TableName.Events]: [],
+      [TableName.EventsFull]: [],
     };
 
     this.start();
@@ -114,7 +114,7 @@ export class ClickhouseWriter {
           this.flush(TableName.ObservationsBatchStaging, fullQueue),
           this.flush(TableName.BlobStorageFileLog, fullQueue),
           this.flush(TableName.DatasetRunItems, fullQueue),
-          this.flush(TableName.Events, fullQueue),
+          this.flush(TableName.EventsFull, fullQueue),
         ]).catch((err) => {
           logger.error("ClickhouseWriter.flushAll", err);
         });
@@ -432,8 +432,20 @@ export class ClickhouseWriter {
       });
 
       if (droppedCount > 0) {
+        const droppedIds = queueItems
+          .filter((item) => item.attempts >= this.maxAttempts)
+          .map((item) => {
+            const r = item.data as Record<string, unknown>;
+            return {
+              project_id: r.project_id,
+              trace_id: r.trace_id ?? r.id,
+              id: r.id,
+            };
+          });
+
         logger.error(
           `ClickhouseWriter: Max attempts reached, dropped ${droppedCount} ${tableName} record(s)`,
+          { droppedIds },
         );
       }
     }
@@ -504,7 +516,7 @@ export enum TableName {
   ObservationsBatchStaging = "observations_batch_staging",
   BlobStorageFileLog = "blob_storage_file_log",
   DatasetRunItems = "dataset_run_items_rmt",
-  Events = "events",
+  EventsFull = "events_full", // Primary write target - MV auto-populates events_core
 }
 
 type RecordInsertType<T extends TableName> = T extends TableName.Scores
@@ -521,7 +533,7 @@ type RecordInsertType<T extends TableName> = T extends TableName.Scores
             ? BlobStorageFileLogInsertType
             : T extends TableName.DatasetRunItems
               ? DatasetRunItemRecordInsertType
-              : T extends TableName.Events
+              : T extends TableName.EventsFull
                 ? EventRecordInsertType
                 : never;
 

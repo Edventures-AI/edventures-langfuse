@@ -17,7 +17,8 @@ import {
 } from "../queries/clickhouse-sql/clickhouse-filter";
 import { TraceRecordReadType } from "./definitions";
 import { tracesTableUiColumnDefinitions } from "../tableMappings/mapTracesTable";
-import { UiColumnMappings } from "../../tableDefinitions";
+import { UiColumnMappings, ColumnDefinition } from "../../tableDefinitions";
+import { tracesTableCols } from "../../tableDefinitions/tracesTable";
 import {
   convertDateToClickhouseDateTime,
   PreferredClickhouseService,
@@ -79,7 +80,11 @@ export const checkTraceExistsAndGetTimestamp = async ({
   ) as DateTimeFilter | undefined;
 
   tracesFilter.push(
-    ...createFilterFromFilterState(filter, tracesTableUiColumnDefinitions),
+    ...createFilterFromFilterState(
+      filter,
+      tracesTableUiColumnDefinitions,
+      tracesTableCols,
+    ),
     new StringFilter({
       clickhouseTable: "t",
       field: "id",
@@ -427,6 +432,9 @@ export const getTraceCountsByProjectInCreationInterval = async ({
         {
           query,
           params: input.params,
+          clickhouseConfigs: {
+            request_timeout: 120000, // 2 minutes timeout
+          },
           tags: input.tags,
         },
       );
@@ -650,6 +658,7 @@ export const getTracesGroupedByName = async (
         query,
         params: input.params,
         tags: input.tags,
+        preferredClickhouseService: "ReadOnly",
       });
     },
   });
@@ -662,6 +671,7 @@ export const getTracesGroupedBySessionId = async (
   limit?: number,
   offset?: number,
   columns?: UiColumnMappings,
+  columnDefinitions?: ColumnDefinition[],
 ) => {
   const { tracesFilter } = getProjectIdDefaultFilter(projectId, {
     tracesPrefix: "t",
@@ -671,6 +681,7 @@ export const getTracesGroupedBySessionId = async (
     ...createFilterFromFilterState(
       filter,
       columns ?? tracesTableUiColumnDefinitions,
+      columnDefinitions ?? tracesTableCols,
     ),
   );
 
@@ -721,6 +732,7 @@ export const getTracesGroupedBySessionId = async (
         query,
         params: input.params,
         tags: input.tags,
+        preferredClickhouseService: "ReadOnly",
       });
     },
   });
@@ -733,6 +745,7 @@ export const getTracesGroupedByUsers = async (
   limit?: number,
   offset?: number,
   columns?: UiColumnMappings,
+  columnDefinitions?: ColumnDefinition[],
 ) => {
   const { tracesFilter } = getProjectIdDefaultFilter(projectId, {
     tracesPrefix: "t",
@@ -742,6 +755,7 @@ export const getTracesGroupedByUsers = async (
     ...createFilterFromFilterState(
       filter,
       columns ?? tracesTableUiColumnDefinitions,
+      columnDefinitions ?? tracesTableCols,
     ),
   );
 
@@ -792,6 +806,7 @@ export const getTracesGroupedByUsers = async (
         query,
         params: input.params,
         tags: input.tags,
+        preferredClickhouseService: "ReadOnly",
       });
     },
   });
@@ -801,14 +816,16 @@ export type GroupedTracesQueryProp = {
   projectId: string;
   filter: FilterState;
   columns?: UiColumnMappings;
+  columnDefinitions?: ColumnDefinition[];
 };
 
 export const getTracesGroupedByTags = async (props: GroupedTracesQueryProp) => {
-  const { projectId, filter, columns } = props;
+  const { projectId, filter, columns, columnDefinitions } = props;
 
   const chFilter = createFilterFromFilterState(
     filter,
     columns ?? tracesTableUiColumnDefinitions,
+    columnDefinitions ?? tracesTableCols,
   );
 
   const filterRes = new FilterList(chFilter).apply();
@@ -844,6 +861,7 @@ export const getTracesGroupedByTags = async (props: GroupedTracesQueryProp) => {
         query,
         params: input.params,
         tags: input.tags,
+        preferredClickhouseService: "ReadOnly",
       });
     },
   });
@@ -1138,7 +1156,11 @@ export const getTotalUserCount = async (
   });
 
   tracesFilter.push(
-    ...createFilterFromFilterState(filter, tracesTableUiColumnDefinitions),
+    ...createFilterFromFilterState(
+      filter,
+      tracesTableUiColumnDefinitions,
+      tracesTableCols,
+    ),
   );
 
   const tracesFilterRes = tracesFilter.apply();
@@ -1190,7 +1212,11 @@ export const getUserMetrics = async (
 
   // filter state contains date range filter for traces so far.
   const chFilter = new FilterList(
-    createFilterFromFilterState(filter, tracesTableUiColumnDefinitions),
+    createFilterFromFilterState(
+      filter,
+      tracesTableUiColumnDefinitions,
+      tracesTableCols,
+    ),
   );
   const chFilterRes = chFilter.apply();
 
@@ -1350,7 +1376,9 @@ export const getTracesForBlobStorageExport = function (
       bookmarked as bookmarked,
       tags,
       input as input,
-      output as output
+      output as output,
+      created_at,
+      updated_at
     FROM ${traceTable} FINAL
     WHERE project_id = {projectId: String}
     AND timestamp >= {minTimestamp: DateTime64(3)}
