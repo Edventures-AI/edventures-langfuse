@@ -16,7 +16,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "ip=$(hostname -i | awk '{print $1}'); wget -q --spider http://$ip:3030/api/health",
+          "ip=$$(hostname -i | awk '{print $$1}'); wget -q --spider http://$$ip:3030/api/health",
         ]
       interval: 10s
       timeout: 5s
@@ -90,7 +90,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "ip=$(hostname -i | awk '{print $1}'); wget -q --spider http://$ip:3000/langfuse/api/public/health && wget -q --spider http://$ip:3000/langfuse/api/public/ready",
+          "ip=$$(hostname -i | awk '{print $$1}'); wget -q --spider http://$$ip:3000/langfuse/api/public/health && wget -q --spider http://$$ip:3000/langfuse/api/public/ready",
         ]
       interval: 10s
       timeout: 5s
