@@ -12,6 +12,18 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const http=require('http'); const url='http://localhost:3030/api/health'; const req=http.get(url,(res)=>{res.resume(); process.exit(res.statusCode===200?0:1);}); req.on('error',()=>process.exit(1));",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     ports:
       - 127.0.0.1:3030:3030
     env_file:
@@ -76,6 +88,18 @@ services:
         - NODE_OPTIONS=--max-old-space-size=4096
     restart: always
     depends_on: *langfuse-depends-on
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const http=require('http'); const urls=['http://localhost:3000/api/public/health','http://localhost:3000/api/public/ready']; let i=0; const next=()=>{ if(i>=urls.length) process.exit(0); const req=http.get(urls[i++],(res)=>{res.resume(); if(res.statusCode===200) next(); else process.exit(1);}); req.on('error',()=>process.exit(1)); }; next();",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     ports:
       - 3000:3000
     env_file:
@@ -140,8 +164,6 @@ services:
       start_period: 1s
 
 volumes:
-  langfuse_postgres_data:
-    driver: local
   langfuse_clickhouse_data:
     driver: local
   langfuse_clickhouse_logs:
