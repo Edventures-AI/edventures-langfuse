@@ -1,6 +1,6 @@
 import { NextApiRequest, NextApiResponse } from "next";
-// Import the original handler from one directory up
-import { promptNameHandler } from "../index";
+// Import the default handler from one directory up
+import originalHandler from "../index";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // Next.js maps the first segment to promptName, and the second to subPromptName
@@ -25,5 +25,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   req.query.promptName = fullPromptName;
 
   // Pass to the original handler
-  return promptNameHandler(req, res);
+  return originalHandler(req, res);
 }
