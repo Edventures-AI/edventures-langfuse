@@ -1,10 +1,11 @@
 import { NextApiRequest, NextApiResponse } from "next";
-// Import the original handler so we don't duplicate logic
-import originalHandler from "../../[promptName]/index";
+// Import the original handler from one directory up
+import { promptNameHandler } from "../index";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const folder = req.query.folder as string;
-  const name = req.query.promptName as string;
+  // Next.js maps the first segment to promptName, and the second to subPromptName
+  const folder = req.query.promptName as string;
+  const name = req.query.subPromptName as string;
 
   // Reconstruct the slash that the proxy stripped
   let fullPromptName = `${folder}/${name}`;
@@ -20,7 +21,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // silently ignore decode errors
   }
 
-  // Overwrite the query parameter and pass to the original handler
+  // Overwrite the query parameter to match what the original handler expects
   req.query.promptName = fullPromptName;
-  return originalHandler(req, res);
+
+  // Pass to the original handler
+  return promptNameHandler(req, res);
 }
