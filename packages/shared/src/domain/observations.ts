@@ -116,7 +116,8 @@ export const EventsObservationSchema = ObservationSchema.extend({
   userId: z.string().nullable(),
   sessionId: z.string().nullable(),
   traceName: z.string().nullable(),
-  tags: z.array(z.string()).optional(),
+  release: z.string().nullable().optional(),
+  tags: z.array(z.string()).nullable().optional(),
   bookmarked: z.boolean().optional(),
   public: z.boolean().optional(),
 });

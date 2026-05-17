@@ -57,6 +57,9 @@ import {
   matchesUiColumnMapping,
 } from "../../tableDefinitions";
 
+const FILTER_OPTION_SCORE_NAME_LIMIT = 200;
+const FILTER_OPTION_CATEGORICAL_VALUE_LIMIT = 20;
+
 export const searchExistingAnnotationScore = async (
   projectId: string,
   observationId: string | null,
@@ -813,7 +816,7 @@ export const getScoresGroupedByNameSourceType = async ({
     AND s.data_type IN ({dataTypes: Array(String)})
     GROUP BY name, source, data_type
     ORDER BY count() desc
-    LIMIT 1000;
+    LIMIT ${FILTER_OPTION_SCORE_NAME_LIMIT};
   `;
 
   const rows = await queryClickhouse<{
@@ -879,7 +882,7 @@ export const getNumericScoresGroupedByName = async (
       ${filterRes?.query ? `AND ${filterRes.query}` : ""}
       GROUP BY name
       ORDER BY count() desc
-      LIMIT 1000;
+      LIMIT ${FILTER_OPTION_SCORE_NAME_LIMIT};
     `;
 
   const rows = await queryClickhouse<{
@@ -921,14 +924,14 @@ export const getCategoricalScoresGroupedByName = async (
   const query = `
     SELECT
       name AS label,
-      groupArray(DISTINCT string_value) AS values
+      groupUniqArray(${FILTER_OPTION_CATEGORICAL_VALUE_LIMIT})(string_value) AS values
     FROM scores s
     WHERE s.project_id = {projectId: String}
     AND s.data_type = 'CATEGORICAL'
     ${filterRes?.query ? `AND ${filterRes.query}` : ""}
     GROUP BY name
     ORDER BY count() DESC
-    LIMIT 1000;
+    LIMIT ${FILTER_OPTION_SCORE_NAME_LIMIT};
   `;
 
   const rows = await queryClickhouse<{
@@ -990,7 +993,7 @@ export const getCategoricalScoresGroupedByName = async (
       // Use Set to ensure uniqueness
       const mergedValues = Array.from(
         new Set([...row.values, ...allPossibleValues]),
-      );
+      ).slice(0, FILTER_OPTION_CATEGORICAL_VALUE_LIMIT);
 
       return {
         ...row,
@@ -2065,11 +2068,31 @@ export const getScoresForAnalyticsIntegrations = async function* (
   projectName: string,
   minTimestamp: Date,
   maxTimestamp: Date,
+  options: { useGraceHash?: boolean } = {},
 ) {
-  // Subtract 7d from minTimestamp to account for shift in query
-  const traceTable = "traces";
+  // Pre-filter traces in a CTE so the trace timestamp window prunes partitions
+  // directly, instead of living in an OR clause after the LEFT JOIN where the
+  // planner cannot push it down. Subtract 7d from minTimestamp to keep scores
+  // whose trace was created before the score window started.
+  const query = `
+    WITH selected_traces AS (
+      SELECT
+        t.project_id as project_id,
+        t.id as id,
+        t.name as name,
+        t.session_id as session_id,
+        t.user_id as user_id,
+        t.release as release,
+        t.tags as tags,
+        t.metadata['$posthog_session_id'] as posthog_session_id,
+        t.metadata['$mixpanel_session_id'] as mixpanel_session_id
+      FROM traces t FINAL
+      WHERE t.project_id = {projectId: String}
+      AND t.timestamp >= {minTimestamp: DateTime64(3)} - INTERVAL 7 DAY
+      AND t.timestamp <= {maxTimestamp: DateTime64(3)}
+    )
 
-  const query = `    SELECT
+    SELECT
       s.id as id,
       s.timestamp as timestamp,
       s.name as name,
@@ -2088,10 +2111,10 @@ export const getScoresForAnalyticsIntegrations = async function* (
       t.release as trace_release,
       t.tags as trace_tags,
       s.metadata as metadata,
-      t.metadata['$posthog_session_id'] as posthog_session_id,
-      t.metadata['$mixpanel_session_id'] as mixpanel_session_id
+      t.posthog_session_id as posthog_session_id,
+      t.mixpanel_session_id as mixpanel_session_id
     FROM scores s FINAL
-    LEFT JOIN ${traceTable} t FINAL ON s.trace_id = t.id AND s.project_id = t.project_id
+    LEFT JOIN selected_traces t ON s.trace_id = t.id AND s.project_id = t.project_id
     WHERE s.project_id = {projectId: String}
     AND s.timestamp >= {minTimestamp: DateTime64(3)}
     AND s.timestamp < {maxTimestamp: DateTime64(3)}
@@ -2100,14 +2123,6 @@ export const getScoresForAnalyticsIntegrations = async function* (
       s.trace_id IS NOT NULL
       OR s.session_id IS NOT NULL
       OR s.dataset_run_id IS NOT NULL
-    )
-    AND (
-      t.project_id = '' -- use the default value for the string type to filter for absence
-      OR (
-        t.project_id = {projectId: String}
-        AND t.timestamp >= {minTimestamp: DateTime64(3)} - INTERVAL 7 DAY
-        AND t.timestamp <= {maxTimestamp: DateTime64(3)}
-      )
     )
   `;
 
@@ -2127,10 +2142,14 @@ export const getScoresForAnalyticsIntegrations = async function* (
     },
     clickhouseConfigs: {
       request_timeout: env.LANGFUSE_CLICKHOUSE_DATA_EXPORT_REQUEST_TIMEOUT_MS,
-      clickhouse_settings: {
-        join_algorithm: "grace_hash",
-        grace_hash_join_initial_buckets: "32",
-      },
+      ...(options.useGraceHash
+        ? {
+            clickhouse_settings: {
+              join_algorithm: "grace_hash",
+              grace_hash_join_initial_buckets: "32",
+            },
+          }
+        : {}),
     },
   });
 
