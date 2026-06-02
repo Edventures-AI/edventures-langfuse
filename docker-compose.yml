@@ -12,6 +12,16 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "ip=$$(hostname -i | awk '{print $$1}'); wget -q --spider http://$$ip:3030/api/health",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     ports:
       - 127.0.0.1:3030:3030
     env_file:
@@ -78,6 +88,16 @@ services:
         - NODE_OPTIONS=--max-old-space-size=4096
     restart: always
     depends_on: *langfuse-depends-on
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "ip=$$(hostname -i | awk '{print $$1}'); wget -q --spider http://$$ip:3000/langfuse/api/public/health?failIfDatabaseUnavailable=true && wget -q --spider http://$$ip:3000/langfuse/api/public/ready",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     ports:
       - 3000:3000
     env_file:
@@ -142,8 +162,6 @@ services:
       start_period: 1s
 
 volumes:
-  langfuse_postgres_data:
-    driver: local
   langfuse_clickhouse_data:
     driver: local
   langfuse_clickhouse_logs:

@@ -31,9 +31,21 @@ const getPromptNameHandler = async (
   const { promptName, version, label, resolve } = GetPromptByNameSchema.parse(
     req.query,
   );
+  
+  
+  let decodedPromptName = promptName;
+  try {
+    let decoded = decodeURIComponent(decodedPromptName);
+    while (decoded !== decodedPromptName) {
+      decodedPromptName = decoded;
+      decoded = decodeURIComponent(decodedPromptName);
+    }
+  } catch {
+    // silently ignore decode errors
+  }
 
   const prompt = await getPromptForApi({
-    promptName: promptName,
+    promptName: decodedPromptName,
     projectId: authCheck.scope.projectId,
     version,
     label,
@@ -41,7 +53,7 @@ const getPromptNameHandler = async (
   });
 
   if (!prompt) {
-    let errorMessage = `Prompt not found: '${promptName}'`;
+    let errorMessage = `Prompt not found: '${decodedPromptName}'`;
 
     if (version) {
       errorMessage += ` with version ${version}`;
@@ -75,10 +87,21 @@ const deletePromptNameHandler = async (
 
   const { promptName, version, label } = GetPromptByNameSchema.parse(req.query);
 
+  let decodedPromptName = promptName;
+  try {
+    let decoded = decodeURIComponent(decodedPromptName);
+    while (decoded !== decodedPromptName) {
+      decodedPromptName = decoded;
+      decoded = decodeURIComponent(decodedPromptName);
+    }
+  } catch {
+    // silently ignore decode errors
+  }
+
   // Fetch prompts for audit logging
   const where = {
     projectId: authCheck.scope.projectId,
-    name: promptName,
+    name: decodedPromptName,
     ...(version ? { version } : {}),
     ...(label ? { labels: { has: label } } : {}),
   };
@@ -100,7 +123,7 @@ const deletePromptNameHandler = async (
 
   // Delete prompt versions
   await deletePrompt({
-    promptName,
+    promptName: decodedPromptName,
     projectId: authCheck.scope.projectId,
     version,
     label,
