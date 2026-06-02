@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 
-import { getPromptByName } from "@/src/features/prompts/server/actions/getPromptByName";
+import { getPromptForApi } from "@/src/features/prompts/server/prompt-api-service";
 import { deletePrompt } from "@/src/features/prompts/server/actions/deletePrompt";
 import { withMiddlewares } from "@/src/features/public-api/server/withMiddlewares";
 import { authorizePromptRequestOrThrow } from "../utils/authorizePromptRequest";
@@ -31,7 +31,8 @@ const getPromptNameHandler = async (
   const { promptName, version, label, resolve } = GetPromptByNameSchema.parse(
     req.query,
   );
-
+  
+  
   let decodedPromptName = promptName;
   try {
     let decoded = decodeURIComponent(decodedPromptName);
@@ -43,7 +44,7 @@ const getPromptNameHandler = async (
     // silently ignore decode errors
   }
 
-  const prompt = await getPromptByName({
+  const prompt = await getPromptForApi({
     promptName: decodedPromptName,
     projectId: authCheck.scope.projectId,
     version,

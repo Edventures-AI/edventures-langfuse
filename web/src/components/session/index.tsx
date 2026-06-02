@@ -2,7 +2,7 @@ import { GroupedScoreBadges } from "@/src/components/grouped-score-badge";
 import { ErrorPage } from "@/src/components/error-page";
 import { PublishSessionSwitch } from "@/src/components/publish-object-switch";
 import { StarSessionToggle } from "@/src/components/star-toggle";
-import { IOPreview } from "@/src/components/trace2/components/IOPreview/IOPreview";
+import { IOPreview } from "@/src/components/trace/components/IOPreview/IOPreview";
 import { JsonSkeleton } from "@/src/components/ui/CodeJsonViewer";
 import { Badge } from "@/src/components/ui/badge";
 import { DetailPageNav } from "@/src/features/navigate-detail-pages/DetailPageNav";
@@ -632,9 +632,12 @@ export const SessionEventsPage: React.FC<{
         ...observationEventsFilterConfig.columnDefinitions,
         positionInTraceColumn,
       ],
+      migrateFilterState: undefined,
       facets: observationEventsFilterConfig.facets.filter(
         (facet) =>
-          facet.column !== "sessionId" && facet.column !== "environment",
+          facet.column !== "sessionId" &&
+          facet.column !== "isRootObservation" &&
+          facet.column !== "environment",
       ),
     };
   }, [positionInTraceColumn, sessionEventsTableName]);
@@ -682,6 +685,7 @@ export const SessionEventsPage: React.FC<{
         (column) =>
           column.id !== "sessionId" &&
           column.id !== "hasParentObservation" &&
+          column.id !== "isRootObservation" &&
           column.id !== "environment" &&
           column.id !== "traceId" &&
           column.id !== "traceName" &&
@@ -753,6 +757,8 @@ export const SessionEventsPage: React.FC<{
           filter.column !== "sessionId" &&
           filter.column !== "Has Parent Observation" &&
           filter.column !== "hasParentObservation" &&
+          filter.column !== "Is Root Observation" &&
+          filter.column !== "isRootObservation" &&
           filter.column !== "environment" &&
           filter.column !== "traceId" &&
           filter.column !== "traceName" &&
@@ -781,12 +787,17 @@ export const SessionEventsPage: React.FC<{
       setColumnOrder,
       setColumnVisibility,
       setFilters: setFiltersWrapper,
+      setExpandedFilters: queryFilter.onExpandedChange,
     },
     validationContext: {
       columns: [],
       filterColumnDefinition: sessionEventsFilterConfig.columnDefinitions,
+      expandableFilterColumns: sessionEventsFilterConfig.facets.map(
+        (facet) => facet.column,
+      ),
     },
-    currentFilterState: queryFilter.filterState,
+    currentFilterState: queryFilter.explicitFilterState,
+    currentExpandedFilters: queryFilter.expanded,
   });
 
   const applySystemPreset = useCallback(
