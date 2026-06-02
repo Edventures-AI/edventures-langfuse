@@ -6,6 +6,7 @@
 services:
   langfuse-worker:
     image: docker.io/langfuse/langfuse-worker:3
+    container_name: edventures-langfuse-worker
     restart: always
     depends_on: &langfuse-depends-on
       minio:
@@ -26,6 +27,9 @@ services:
       - 127.0.0.1:3030:3030
     env_file:
       - .env
+    volumes:
+      # Pass the CA cert generated on the host down to the worker container
+      - ./ca.pem:/tmp/ca.pem:ro
     environment: &langfuse-worker-env
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/postgres} # CHANGEME
@@ -77,7 +81,7 @@ services:
       SMTP_CONNECTION_URL: ${SMTP_CONNECTION_URL:-}
 
   langfuse-web:
-    build: # <-- ADD THIS BLOCK
+    build:
       context: .
       dockerfile: ./web/Dockerfile
       args:
@@ -86,6 +90,7 @@ services:
         - SENTRY_IGNORE_API_RESOLUTION_ERROR=1
         - SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1
         - NODE_OPTIONS=--max-old-space-size=4096
+    container_name: edventures-langfuse-web
     restart: always
     depends_on: *langfuse-depends-on
     healthcheck:
@@ -102,6 +107,9 @@ services:
       - 3000:3000
     env_file:
       - .env
+    volumes:
+      # Pass the CA cert down to the web server container
+      - ./ca.pem:/tmp/ca.pem:ro
     environment:
       <<: *langfuse-worker-env
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-mysecret} # CHANGEME
@@ -117,6 +125,7 @@ services:
 
   clickhouse:
     image: docker.io/clickhouse/clickhouse-server
+    container_name: edventures-langfuse-clickhouse
     restart: always
     user: "101:101"
     env_file:
@@ -140,6 +149,7 @@ services:
 
   minio:
     image: cgr.dev/chainguard/minio
+    container_name: edventures-langfuse-minio
     restart: always
     entrypoint: sh
     user: root
