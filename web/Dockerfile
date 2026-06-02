@@ -7,11 +7,11 @@ RUN apk update && apk upgrade --no-cache libcrypto3 libssl3 libc6-compat busybox
 
 FROM --platform=${TARGETPLATFORM:-linux/amd64} alpine AS build-base
 # Pin turbo to avoid nondeterministic prune output from future patch releases.
-RUN npm install turbo@2.9.12 --global
+RUN npm install turbo@2.9.14 --global
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
-RUN corepack prepare pnpm@10.33.0 --activate
+RUN corepack prepare pnpm@11.1.3 --activate
 
 FROM --platform=${TARGETPLATFORM:-linux/amd64} alpine AS runtime-base
 # Remove build-only package managers. npm stays here because the runner stage
@@ -59,6 +59,8 @@ ENV NEXT_MANUAL_SIG_HANDLE true
 ARG NEXT_PUBLIC_PLAIN_APP_ID
 ARG NEXT_PUBLIC_LANGFUSE_CLOUD_REGION
 ENV NEXT_PUBLIC_LANGFUSE_CLOUD_REGION=$NEXT_PUBLIC_LANGFUSE_CLOUD_REGION
+ARG NEXT_PUBLIC_LANGFUSE_CODE_EVAL_ENABLED
+ENV NEXT_PUBLIC_LANGFUSE_CODE_EVAL_ENABLED=$NEXT_PUBLIC_LANGFUSE_CODE_EVAL_ENABLED
 ARG NEXT_PUBLIC_DEMO_ORG_ID
 ENV NEXT_PUBLIC_DEMO_ORG_ID=$NEXT_PUBLIC_DEMO_ORG_ID
 ARG NEXT_PUBLIC_DEMO_PROJECT_ID
@@ -120,6 +122,8 @@ ARG NEXT_PUBLIC_BUILD_ID
 ENV BUILD_ID=$NEXT_PUBLIC_BUILD_ID
 ARG NEXT_PUBLIC_LANGFUSE_CLOUD_REGION
 ENV NEXT_PUBLIC_LANGFUSE_CLOUD_REGION=$NEXT_PUBLIC_LANGFUSE_CLOUD_REGION
+ARG NEXT_PUBLIC_LANGFUSE_CODE_EVAL_ENABLED
+ENV NEXT_PUBLIC_LANGFUSE_CODE_EVAL_ENABLED=$NEXT_PUBLIC_LANGFUSE_CODE_EVAL_ENABLED
 
 ENV NODE_ENV production
 # Uncomment the following line in case you want to disable telemetry during runtime.

@@ -44,9 +44,9 @@ Current shape:
         "-y",
         "@playwright/mcp@latest",
         "--isolated",
-        "--save-trace",
+        "--save-session",
         "--output-dir",
-        ".playwright-mcp",
+        "/tmp/playwright-mcp",
         "--test-id-attribute",
         "data-testid"
       ]
