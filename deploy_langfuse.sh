@@ -2,13 +2,15 @@
 
 echo "Starting Langfuse deployment sequence..."
 
-# 1. Fetch production secrets from your dedicated folder into the host .env file
-# Adjust --path="/langfuse" if your folder name differs
-infisical export --env=prod --path="/langfuse" --output-file=.env
+# Define your project ID variable
+PROJECT_ID="e54d669b-3aa1-4a9c-b4c1-df456f82612a"
+
+# 1. Fetch production secrets using the explicit --projectId flag
+infisical export --env=prod --projectId="$PROJECT_ID" --path="/langfuse" --output-file=.env
 echo "✓ Production .env file generated for Langfuse stack."
 
-# 2. Extract the DB_CA_CERT string cleanly using python parsing to handle formatting
-infisical export --env=prod --path="/langfuse" --format=json | python3 -c "
+# 2. Extract the DB_CA_CERT string using the same project ID
+infisical export --env=prod --projectId="$PROJECT_ID" --path="/langfuse" --format=json | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
@@ -20,7 +22,7 @@ except Exception as e:
 
 echo "✓ Production DB CA Certificate hydrated at ./ca.pem"
 
-# 3. Spin up the containers using the standard compose command
+# 3. Spin up the containers
 docker compose up -d --build
 
 echo "Deployment complete! Langfuse infrastructure is updating securely."
