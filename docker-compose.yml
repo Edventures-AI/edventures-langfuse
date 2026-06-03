@@ -81,15 +81,7 @@ services:
       SMTP_CONNECTION_URL: ${SMTP_CONNECTION_URL:-}
 
   langfuse-web:
-    build:
-      context: .
-      dockerfile: ./web/Dockerfile
-      args:
-        - NEXT_PUBLIC_BASE_PATH=/langfuse
-        - NEXT_TELEMETRY_DISABLED=1
-        - SENTRY_IGNORE_API_RESOLUTION_ERROR=1
-        - SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING=1
-        - NODE_OPTIONS=--max-old-space-size=4096
+    image: docker.io/langfuse/langfuse:3
     container_name: edventures-langfuse-web
     restart: always
     depends_on: *langfuse-depends-on
@@ -97,7 +89,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "ip=$$(hostname -i | awk '{print $$1}'); wget -q --spider http://$$ip:3000/langfuse/api/public/health?failIfDatabaseUnavailable=true && wget -q --spider http://$$ip:3000/langfuse/api/public/ready",
+          "ip=$$(hostname -i | awk '{print $$1}'); wget -q --spider http://$$ip:3000/api/public/health?failIfDatabaseUnavailable=true && wget -q --spider http://$$ip:3000/api/public/ready",
         ]
       interval: 10s
       timeout: 5s
