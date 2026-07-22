@@ -20,19 +20,22 @@ import {
   GCPServiceAccountKeySchema,
   BedrockConfigSchema,
   BedrockCredentialSchema,
+  OpenAIConfigSchema,
   VertexAIConfigSchema,
   BEDROCK_USE_DEFAULT_CREDENTIALS,
   VERTEXAI_USE_DEFAULT_CREDENTIALS,
   EvaluatorBlockReason,
   getEvaluatorBlockMetadata,
+  type LLMConnectionConfig,
 } from "@langfuse/shared";
-import { findDefaultModelEvalTemplateIds } from "@/src/features/evals/server/defaultModelEvalTemplateRepository";
+import { findDefaultModelEvalTemplateIds } from "@/src/features/evals/server/evaluatorRepository";
 import { encrypt, decrypt } from "@langfuse/shared/encryption";
 import {
   ChatMessageType,
-  fetchLLMCompletion,
+  generateLLMText,
   LLMAdapter,
   logger,
+  mapLegacyLLMCompletionParams,
   decryptAndParseExtraHeaders,
   blockEvaluatorConfigsInTx,
   EvaluatorBlockSource,
@@ -128,11 +131,13 @@ async function testLLMConnection(
     ];
 
     // Parse config properly for type safety
-    let parsedConfig: Record<string, string> | null = null;
+    let parsedConfig: LLMConnectionConfig | null = null;
     if (params.config && params.adapter === LLMAdapter.Bedrock) {
       const bedrockConfig = BedrockConfigSchema.parse(params.config);
 
       parsedConfig = { region: bedrockConfig.region };
+    } else if (params.config && params.adapter === LLMAdapter.OpenAI) {
+      parsedConfig = OpenAIConfigSchema.parse(params.config);
     } else if (params.config && params.adapter === LLMAdapter.VertexAI) {
       const vertexAIConfig = VertexAIConfigSchema.parse(params.config);
       parsedConfig = vertexAIConfig.location
@@ -140,21 +145,22 @@ async function testLLMConnection(
         : null;
     }
 
-    await fetchLLMCompletion({
-      modelParams: {
-        adapter: params.adapter,
-        provider: params.provider,
-        model,
-      },
-      llmConnection: {
-        secretKey: encrypt(params.secretKey),
-        extraHeaders:
-          params.extraHeaders && encrypt(JSON.stringify(params.extraHeaders)),
-        baseURL: params.baseURL || undefined,
-        config: parsedConfig,
-      },
-      messages: testMessages,
-      streaming: false,
+    await generateLLMText({
+      ...mapLegacyLLMCompletionParams({
+        modelParams: {
+          adapter: params.adapter,
+          provider: params.provider,
+          model,
+        },
+        connection: {
+          secretKey: encrypt(params.secretKey),
+          extraHeaders:
+            params.extraHeaders && encrypt(JSON.stringify(params.extraHeaders)),
+          baseURL: params.baseURL || undefined,
+          config: parsedConfig,
+        },
+        messages: testMessages,
+      }),
       maxRetries: 1,
     });
 

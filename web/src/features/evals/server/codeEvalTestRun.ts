@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_TRACE_ENVIRONMENT,
+  createUnknownSdkIngestionAttribution,
   eventTypes,
+  applyCommentFilters,
   createW3CTraceId,
   extractObservationVariables,
   getEventsStreamForEval,
@@ -13,7 +15,6 @@ import {
   type DispatchResult,
   type InternalTraceWriteInput,
 } from "@langfuse/shared/src/server";
-import { TRPCError } from "@trpc/server";
 
 import {
   LangfuseNotFoundError,
@@ -32,8 +33,27 @@ import {
   isEventTarget,
   isExperimentTarget,
 } from "@/src/features/evals/utils/typeHelpers";
+import { isCodeEvalSourceCodeLanguageSupported } from "@/src/features/evals/server/isCodeEvalEnabled";
 
-type CodeEvalTestRunError = Omit<CodeEvalUserVisibleError, "retryable">;
+type CodeEvalTestRunDispatchError = Omit<CodeEvalUserVisibleError, "retryable">;
+
+type CodeEvalTestRunSetupErrorCode =
+  | "DISPATCHER_NOT_CONFIGURED"
+  | "TEMPLATE_NOT_FOUND"
+  | "UNSUPPORTED_LANGUAGE"
+  | "INVALID_TARGET"
+  | "OBSERVATION_NOT_FOUND";
+
+export class CodeEvalTestRunSetupError extends Error {
+  constructor(
+    readonly code: CodeEvalTestRunSetupErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "CodeEvalTestRunSetupError";
+    Object.setPrototypeOf(this, CodeEvalTestRunSetupError.prototype);
+  }
+}
 
 export type CodeEvalTestRunResult =
   | {
@@ -44,7 +64,7 @@ export type CodeEvalTestRunResult =
     }
   | {
       success: false;
-      error: CodeEvalTestRunError;
+      error: CodeEvalTestRunDispatchError;
       executionTraceId: string;
       executionTraceFromTimestamp: Date;
     };
@@ -87,6 +107,7 @@ export async function runCodeEvalTestForJobConfig(params: {
   filter: FilterCondition[] | null;
 }): Promise<CodeEvalTestRunResult | null> {
   const observation = await getObservationForEvalByFilter({
+    prisma: params.prisma,
     projectId: params.projectId,
     target: params.target,
     filter: params.filter,
@@ -115,10 +136,10 @@ async function runCodeEvalTestForObservation(params: {
   const dispatcher = resolveConfiguredCodeEvalDispatcher();
 
   if (!dispatcher) {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: "Code eval dispatcher is not configured",
-    });
+    throw new CodeEvalTestRunSetupError(
+      "DISPATCHER_NOT_CONFIGURED",
+      "Code eval dispatcher is not configured",
+    );
   }
 
   const codeTemplate = (await params.prisma.evalTemplate.findFirst({
@@ -132,10 +153,17 @@ async function runCodeEvalTestForObservation(params: {
   })) as EvalTemplateCodeBased | null;
 
   if (!codeTemplate) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: "Evaluator template not found",
-    });
+    throw new CodeEvalTestRunSetupError(
+      "TEMPLATE_NOT_FOUND",
+      "Evaluator template not found",
+    );
+  }
+
+  if (!isCodeEvalSourceCodeLanguageSupported(codeTemplate.sourceCodeLanguage)) {
+    throw new CodeEvalTestRunSetupError(
+      "UNSUPPORTED_LANGUAGE",
+      "This code evaluator language is not supported by the configured dispatcher.",
+    );
   }
 
   const extractedVariables = extractObservationVariables({
@@ -189,29 +217,41 @@ async function runCodeEvalTestForObservation(params: {
 function toCodeEvalTestRunError({
   retryable: _retryable,
   ...error
-}: CodeEvalUserVisibleError): CodeEvalTestRunError {
+}: CodeEvalUserVisibleError): CodeEvalTestRunDispatchError {
   return error;
 }
 
 async function getObservationForEvalByFilter(params: {
+  prisma: PrismaClient;
   projectId: string;
   target: EvalTargetObject;
   filter: FilterCondition[] | null;
 }): Promise<ObservationForEval | null> {
   if (!isEventTarget(params.target) && !isExperimentTarget(params.target)) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Code evaluators can only run on observations or experiments.",
-    });
+    throw new CodeEvalTestRunSetupError(
+      "INVALID_TARGET",
+      "Code evaluators can only run on observations or experiments.",
+    );
   }
 
   const filter = isExperimentTarget(params.target)
     ? getExperimentEvalPreviewFilters(params.filter)
     : params.filter;
 
+  const { filterState, hasNoMatches } = await applyCommentFilters({
+    filterState: filter ?? [],
+    prisma: params.prisma,
+    projectId: params.projectId,
+    objectType: "OBSERVATION",
+  });
+
+  if (hasNoMatches) {
+    return null;
+  }
+
   const stream = await getEventsStreamForEval({
     projectId: params.projectId,
-    filter,
+    filter: filterState,
     rowLimit: 1,
   });
 
@@ -230,7 +270,7 @@ async function getObservationForEvalById(params: {
   shouldReadFromObservationsTable?: boolean;
 }): Promise<ObservationForEval> {
   if (
-    env.LANGFUSE_ENABLE_EVENTS_TABLE_FLAGS !== "true" ||
+    env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN !== "true" ||
     params.shouldReadFromObservationsTable
   ) {
     return getObservationForEvalByIdFromLegacyObservations(params);
@@ -282,6 +322,7 @@ async function getObservationForEvalByIdFromLegacyObservations(params: {
   traceId: string;
   startTime: Date;
 }): Promise<ObservationForEval> {
+  // eslint-disable-next-line @typescript-eslint/no-deprecated
   const observation = await getObservationById({
     projectId: params.projectId,
     id: params.id,
@@ -344,10 +385,10 @@ async function getObservationForEvalByIdFromLegacyObservations(params: {
 }
 
 function throwObservationNotFound(): never {
-  throw new TRPCError({
-    code: "NOT_FOUND",
-    message: "Observation not found",
-  });
+  throw new CodeEvalTestRunSetupError(
+    "OBSERVATION_NOT_FOUND",
+    "Observation not found",
+  );
 }
 
 async function writeTraceViaIngestion(trace: InternalTraceWriteInput) {
@@ -401,17 +442,19 @@ async function writeTraceViaIngestion(trace: InternalTraceWriteInput) {
     },
   }));
 
-  const result = await processEventBatch(
-    [traceEvent, ...spanEvents],
-    {
-      validKey: true,
-      scope: {
-        projectId: rootEventInput.projectId,
-        accessLevel: "project",
-      },
-    } satisfies Parameters<typeof processEventBatch>[1],
-    { delay: 0, isLangfuseInternal: true },
-  );
+  const auth = {
+    validKey: true,
+    scope: {
+      projectId: rootEventInput.projectId,
+      accessLevel: "project",
+    },
+  } satisfies Parameters<typeof processEventBatch>[1];
+
+  const result = await processEventBatch([traceEvent, ...spanEvents], auth, {
+    delay: 0,
+    isLangfuseInternal: true,
+    attribution: createUnknownSdkIngestionAttribution({ authCheck: auth }),
+  });
 
   if (result.errors.length > 0) {
     throw new Error(result.errors[0]?.error ?? "Failed to write trace");

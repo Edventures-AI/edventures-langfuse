@@ -1,5 +1,5 @@
 import {
-  createEvent,
+  createEvent as createEventBase,
   createEventsCh,
   createOrgProjectAndApiKey,
   queryClickhouse,
@@ -16,6 +16,15 @@ import waitForExpect from "wait-for-expect";
 let projectId: string;
 let auth: string;
 
+// The events tables carry metadata as flattened `metadata_names` /
+// `metadata_values` arrays. The fixtures below also pass the nested object
+// form for readability; it is not a column and is ignored by the insert.
+const createEvent = (
+  event: Parameters<typeof createEventBase>[0] & {
+    metadata?: Record<string, unknown>;
+  },
+) => createEventBase(event);
+
 const getObservations = (url: string) =>
   makeZodVerifiedAPICall(
     GetObservationsV2Response,
@@ -28,7 +37,7 @@ const getObservations = (url: string) =>
 const getRaw = (url: string) => makeAPICall("GET", url, undefined, auth);
 
 const maybe =
-  env.LANGFUSE_ENABLE_EVENTS_TABLE_V2_APIS === "true"
+  env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN === "true"
     ? describe
     : describe.skip;
 
@@ -264,9 +273,9 @@ describe("/api/public/v2/observations API Endpoint", () => {
       const envA = `env-a-${randomUUID()}`;
       const envB = `env-b-${randomUUID()}`;
       const envC = `env-c-${randomUUID()}`;
-      const observationIdA = randomUUID();
-      const observationIdB = randomUUID();
-      const observationIdC = randomUUID();
+      const observationIdA: string = randomUUID();
+      const observationIdB: string = randomUUID();
+      const observationIdC: string = randomUUID();
       const timestamp = new Date();
       const timeValue = timestamp.getTime() * 1000;
 
@@ -1735,9 +1744,9 @@ describe("/api/public/v2/observations API Endpoint", () => {
       // Should fail validation
       expect(response.status).toBe(400);
       expect(response.body).toHaveProperty("message");
-      expect((response.body as { message: string }).message).toContain(
-        "Invalid cursor format",
-      );
+      expect(
+        (response.body as unknown as { message: string }).message,
+      ).toContain("Invalid cursor format");
     });
   });
 });
