@@ -8,6 +8,7 @@ import {
 
 const endpoint = process.env.LANGFUSE_CODE_EVAL_AWS_LAMBDA_ENDPOINT;
 const describeWithFloci = endpoint ? describe : describe.skip;
+const FLOCI_TEST_TIMEOUT_MS = 30_000;
 
 process.env.AWS_ACCESS_KEY_ID ??= "test";
 process.env.AWS_SECRET_ACCESS_KEY ??= "test";
@@ -27,6 +28,7 @@ const baseInput: DispatchInput = {
       input: "hello",
       output: "hello world",
       metadata: { topic: "integration" },
+      toolCalls: [],
     },
     experiment: {
       itemExpectedOutput: "hello world",
@@ -108,21 +110,73 @@ describeWithFloci("AwsLambdaCodeEvalDispatcher Floci integration", () => {
         }),
       ).resolves.toEqual({ scores: expectedScores });
     },
+    FLOCI_TEST_TIMEOUT_MS,
   );
 
-  it("preserves runner error classifications", async () => {
-    await expect(
-      dispatcher.dispatch({
-        ...baseInput,
-        runtime: { language: "TYPESCRIPT" },
-        code: {
-          source: `function evaluate() { throw new Error("boom") }`,
-        },
-      }),
-    ).rejects.toMatchObject({
-      code: "USER_CODE_ERROR",
-      message: "boom",
-      retryable: false,
-    } satisfies Partial<CodeEvalDispatcherError>);
-  });
+  it(
+    "preserves runner error classifications",
+    async () => {
+      await expect(
+        dispatcher.dispatch({
+          ...baseInput,
+          runtime: { language: "TYPESCRIPT" },
+          code: {
+            source: `function evaluate() { throw new Error("boom") }`,
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "USER_CODE_ERROR",
+        message: "boom",
+        retryable: false,
+      } satisfies Partial<CodeEvalDispatcherError>);
+    },
+    FLOCI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "formats Python exceptions with type and evaluator line number",
+    async () => {
+      // Line 4 of the source raises; str(KeyError) alone would be just "'beer'".
+      await expect(
+        dispatcher.dispatch({
+          ...baseInput,
+          runtime: { language: "PYTHON" },
+          code: {
+            source: `
+def evaluate(ctx):
+    data = {"output": ctx.observation.output}
+    return data["beer"]
+`,
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "USER_CODE_ERROR",
+        message: "KeyError: 'beer' (line 4)",
+        retryable: false,
+      } satisfies Partial<CodeEvalDispatcherError>);
+    },
+    FLOCI_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    "prefixes non-generic error names from the Node runner",
+    async () => {
+      await expect(
+        dispatcher.dispatch({
+          ...baseInput,
+          runtime: { language: "TYPESCRIPT" },
+          code: {
+            source: `function evaluate(ctx: any) { return ctx.observation.missing.deeply; }`,
+          },
+        }),
+      ).rejects.toMatchObject({
+        code: "USER_CODE_ERROR",
+        message: expect.stringMatching(
+          /^TypeError: Cannot read properties of undefined/,
+        ),
+        retryable: false,
+      } satisfies Partial<CodeEvalDispatcherError>);
+    },
+    FLOCI_TEST_TIMEOUT_MS,
+  );
 });

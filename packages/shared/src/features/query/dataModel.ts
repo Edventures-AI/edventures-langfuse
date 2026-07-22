@@ -690,6 +690,16 @@ const scoresV2BaseDimensions: DimensionsDeclarationType = {
     description: "Identifier of the session.",
     highCardinality: true,
   },
+  // Run-level scores (dataset_run_id on scores table). Used by experiment
+  // widgets via entityDimension + filters.
+  datasetRunId: {
+    sql: "nullIf(scores.dataset_run_id, '')",
+    alias: "datasetRunId",
+    type: "string",
+    description: "Identifier of the dataset run (experiment) for the score.",
+    highCardinality: true,
+    uiHidden: true,
+  },
   // Trace metadata on events table (accessed via events_traces JOIN)
   traceName: {
     sql: "COALESCE(nullIf(events_traces.trace_name, ''), nullIf(events_traces.name, ''))",
@@ -756,12 +766,33 @@ const scoresV2BaseDimensions: DimensionsDeclarationType = {
     relationTable: "events_observations",
     description: "Version of the prompt used for the observation.",
   },
+  // Experiment fields for observation-attached scores. These stay hidden from
+  // the custom dashboard builder for now and are used by internal experiment
+  // widgets via entityDimension + filters.
+  experimentName: {
+    sql: "nullIf(events_observations.experiment_name, '')",
+    alias: "experimentName",
+    type: "string",
+    relationTable: "events_observations",
+    description: "Name of the experiment associated with the score.",
+    highCardinality: true,
+    uiHidden: true,
+  },
+  experimentId: {
+    sql: "nullIf(events_observations.experiment_id, '')",
+    alias: "experimentId",
+    type: "string",
+    relationTable: "events_observations",
+    description: "ID of the experiment associated with the score.",
+    highCardinality: true,
+    uiHidden: true,
+  },
 };
 
 // Factory for shared score-specific dimensions (both numeric and categorical)
 const createScoreSpecificDimensions = (
   tableAlias: string,
-  isV2: boolean = false,
+  isV2 = false,
 ): DimensionsDeclarationType => ({
   id: {
     sql: `${tableAlias}.id`,
@@ -856,24 +887,24 @@ const createScoreTableRelations = (
         timeDimension: "start_time",
       },
     };
-  } else {
-    return {
-      events_traces: {
-        name: "events_core",
-        joinConditionSql:
-          "ON scores.trace_id = events_traces.trace_id AND scores.project_id = events_traces.project_id AND events_traces.parent_span_id = ''",
-        timeDimension: "start_time",
-        useFinal: false,
-      },
-      events_observations: {
-        name: "events_core",
-        joinConditionSql:
-          "ON scores.project_id = events_observations.project_id AND scores.trace_id = events_observations.trace_id AND scores.observation_id = events_observations.span_id",
-        timeDimension: "start_time",
-        useFinal: false,
-      },
-    };
   }
+
+  return {
+    events_traces: {
+      name: "events_core",
+      joinConditionSql:
+        "ON scores.trace_id = events_traces.trace_id AND scores.project_id = events_traces.project_id AND events_traces.parent_span_id = ''",
+      timeDimension: "start_time",
+      useFinal: false,
+    },
+    events_observations: {
+      name: "events_core",
+      joinConditionSql:
+        "ON scores.project_id = events_observations.project_id AND scores.trace_id = events_observations.trace_id AND scores.observation_id = events_observations.span_id",
+      timeDimension: "start_time",
+      useFinal: false,
+    },
+  };
 };
 
 function scoresNumericViewBase(version: "v1" | "v2"): ViewDeclarationType {
@@ -964,8 +995,58 @@ function scoresCategoricalViewBase(version: "v1" | "v2"): ViewDeclarationType {
   };
 }
 
+function scoresBooleanViewBase(version: "v1" | "v2"): ViewDeclarationType {
+  const baseDimensions =
+    version === "v1" ? scoreBaseDimensions : scoresV2BaseDimensions;
+  return {
+    name: "scores_boolean",
+    description:
+      "Scores are flexible objects that are used for evaluations. This view contains boolean scores.",
+    dimensions: {
+      ...baseDimensions,
+      ...createScoreSpecificDimensions("scores_boolean", version === "v2"),
+      booleanValue: {
+        sql: "toBool(scores_boolean.value)",
+        alias: "booleanValue",
+        type: "boolean",
+        description: "Boolean value of the score.",
+      },
+    },
+    measures: {
+      count: {
+        sql: "count(*)",
+        alias: "count",
+        type: "integer",
+        description: "Total number of scores.",
+        unit: "scores",
+      },
+      value: {
+        sql: "any(value)",
+        alias: "value",
+        type: "number",
+        description:
+          "Numeric 0/1 value of the score. Its average is the true-rate.",
+      },
+    },
+    tableRelations: createScoreTableRelations(version),
+    segments: [
+      {
+        column: "data_type",
+        operator: "=" as const,
+        value: "BOOLEAN",
+        type: "string" as const,
+      },
+    ],
+    timeDimension: "timestamp",
+    baseCte: `scores scores_boolean FINAL`,
+  };
+}
+
 export const scoresNumericView: ViewDeclarationType =
   scoresNumericViewBase("v1");
+
+export const scoresBooleanView: ViewDeclarationType =
+  scoresBooleanViewBase("v1");
 
 export const scoresCategoricalView: ViewDeclarationType =
   scoresCategoricalViewBase("v1");
@@ -973,6 +1054,9 @@ export const scoresCategoricalView: ViewDeclarationType =
 // v2 Scores Views
 export const scoresNumericViewV2: ViewDeclarationType =
   scoresNumericViewBase("v2");
+
+export const scoresBooleanViewV2: ViewDeclarationType =
+  scoresBooleanViewBase("v2");
 
 export const scoresCategoricalViewV2: ViewDeclarationType =
   scoresCategoricalViewBase("v2");
@@ -1356,7 +1440,7 @@ export const eventsObservationsView: ViewDeclarationType = {
 };
 
 // Define versioned structure type
-// Both v1 and v2 have all views (traces, observations, scores-numeric, scores-categorical)
+// Both v1 and v2 have all views (traces, observations, and score views)
 // v1 uses normalized tables (traces, observations), v2 uses events table
 type VersionedViewDeclarations = {
   readonly [version in ViewVersion]: {
@@ -1370,12 +1454,14 @@ export const viewDeclarations: VersionedViewDeclarations = {
     traces: traceView,
     observations: observationsView, // Old: observations table
     "scores-numeric": scoresNumericView,
+    "scores-boolean": scoresBooleanView,
     "scores-categorical": scoresCategoricalView,
   },
   v2: {
     traces: eventsTracesView,
     observations: eventsObservationsView,
     "scores-numeric": scoresNumericViewV2,
+    "scores-boolean": scoresBooleanViewV2,
     "scores-categorical": scoresCategoricalViewV2,
   },
 } as const;

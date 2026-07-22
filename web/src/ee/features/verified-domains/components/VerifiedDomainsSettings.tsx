@@ -186,8 +186,8 @@ function DomainRow({ orgId, row }: { orgId: string; row: DomainRowData }) {
 
   const verifyMutation = api.verifiedDomain.verify.useMutation({
     onSuccess: () => {
-      void utils.verifiedDomain.list.invalidate({ orgId });
-      void utils.ssoConfig.get.invalidate({ orgId });
+      utils.verifiedDomain.list.invalidate({ orgId });
+      utils.ssoConfig.get.invalidate({ orgId });
       showSuccessToast({
         title: "Domain verified",
         description: `${row.domain} is now verified.`,
@@ -273,7 +273,7 @@ function DnsInstructions({
 }) {
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium">
+      <p className="text-sm font-bold">
         Add the following TXT record to your DNS provider:
       </p>
       <Card className="overflow-hidden">
@@ -306,7 +306,7 @@ function DnsInstructions({
       </Card>
       <p className="text-muted-foreground text-xs">
         DNS changes may take up to 24h to propagate. After adding the record,
-        click <span className="font-medium">Verify</span>.
+        click <span className="font-bold">Verify</span>.
       </p>
     </div>
   );
@@ -323,7 +323,7 @@ function AddDomainButton({ orgId }: { orgId: string }) {
 
   const createMutation = api.verifiedDomain.create.useMutation({
     onSuccess: () => {
-      void utils.verifiedDomain.list.invalidate({ orgId });
+      utils.verifiedDomain.list.invalidate({ orgId });
       showSuccessToast({
         title: "Domain added",
         description:
@@ -401,7 +401,7 @@ function DeleteDomainButton({
 
   const deleteMutation = api.verifiedDomain.delete.useMutation({
     onSuccess: () => {
-      void utils.verifiedDomain.list.invalidate({ orgId });
+      utils.verifiedDomain.list.invalidate({ orgId });
       showSuccessToast({
         title: "Domain removed",
         description: `${domain} has been removed.`,

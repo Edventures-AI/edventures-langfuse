@@ -12,7 +12,7 @@ Use this skill for interactive dependency bumps in Langfuse.
 
 ## Read Order
 
-- Start with [AGENTS.md](AGENTS.md) for the end-to-end workflow.
+- Use this `SKILL.md` for the end-to-end workflow.
 - Run the main helper once at the start of the upgrade:
   `node .agents/skills/pnpm-upgrade-package/scripts/check-release-age-window.mjs <package> [targetVersion]`
 
@@ -48,8 +48,40 @@ Use this skill for interactive dependency bumps in Langfuse.
   unless the user asked for latest.
 - Compare the target version with the latest version installable under the
   current `minimumReleaseAge` window.
+- Before generating lockfile changes, run
+  `pnpm install --dry-run --ignore-scripts` to catch resolver and policy
+  failures without writing `pnpm-lock.yaml` or `node_modules`.
+- Inspect any dry-run "would make changes" output as baseline resolver drift
+  before deciding which write command is safe.
 - Ask before adding `minimumReleaseAgeExclude` entries for the target package,
   exact dependency companions from `dependencies` or `optionalDependencies`, or
   locally installed exact peer dependencies.
 - Finish with `pnpm why -r <package>` to confirm that only the intended version
   remains in the workspace.
+- In the final response, include a copy-pasteable human commit command using
+  the resolved package name and target version. Use a branch-safe package slug
+  for scoped packages, but keep the exact package name in the commit message:
+  `git switch -C deps/bump-<package-slug>-to-<version> && git commit -m "chore(deps): bump <package> to <version>" --no-verify`
+
+## Quick Commands
+
+- Analysis pass:
+  `node .agents/skills/pnpm-upgrade-package/scripts/check-release-age-window.mjs <package> <targetVersion>`
+- Transitive provenance / final graph verification:
+  `pnpm why -r <package>`
+- Inspect a current parent manifest on the registry:
+  `npm view <parent>@<installedVersion> dependencies peerDependencies optionalDependencies --json`
+- Preflight resolver/policy check:
+  `pnpm install --dry-run --ignore-scripts`
+- Optional lockfile cleanup:
+  `pnpm dedupe`
+- Bump in the root workspace:
+  `pnpm -w up <package>@<version>`
+- Bump in one workspace:
+  `pnpm --filter web up <package>@<version>`
+- Bump everywhere that should move together:
+  `pnpm -r up <package>@<version>`
+- Verify temporary override removal:
+  remove the override, then run `pnpm install` and `pnpm dedupe`
+- Human commit helper:
+  `git switch -C deps/bump-<package-slug>-to-<version> && git commit -m "chore(deps): bump <package> to <version>" --no-verify`

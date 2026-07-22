@@ -87,6 +87,7 @@ export const views = z.enum([
   "observations",
   "scores-numeric",
   "scores-categorical",
+  "scores-boolean",
   // "sessions",
   // "users",
 ]);
@@ -96,6 +97,7 @@ export const viewsV2 = z.enum([
   "observations",
   "scores-numeric",
   "scores-categorical",
+  "scores-boolean",
 ]);
 
 export const viewVersions = z.enum(["v1", "v2"]);
@@ -120,11 +122,10 @@ export const metricAggregations = z.enum([
   "uniq",
 ]);
 
-/**
- * Returns the subset of aggregations that are valid for a given measure type.
- * Whitelists known numeric types; unknown or missing types default to the
- * restrictive count/uniq set to surface missing type annotations early.
- */
+/** MeasureDefinition is a single `measures` entry on a ViewDeclaration. */
+export type MeasureDefinition = ViewDeclarationType["measures"][string];
+
+/** getValidAggregationsForMeasureType returns the aggregations valid for a measure type: every aggregation for numeric types, or `count`/`uniq` otherwise. */
 export function getValidAggregationsForMeasureType(
   measureType: string | undefined,
 ): z.infer<typeof metricAggregations>[] {
@@ -143,6 +144,7 @@ export const metric = z.object({
   aggregation: metricAggregations,
 });
 
+/** granularities is the superset of time-bucket tokens: the 6 base options plus the 10 Monitor window increments. */
 export const granularities = z.enum([
   "auto",
   "minute",
@@ -150,6 +152,16 @@ export const granularities = z.enum([
   "day",
   "week",
   "month",
+  "5m",
+  "10m",
+  "15m",
+  "30m",
+  "1h",
+  "2h",
+  "4h",
+  "1d",
+  "2d",
+  "1w",
 ]);
 
 export type QueryType = z.infer<typeof query>;
@@ -167,6 +179,16 @@ export const query = z
         granularity: granularities,
       })
       .nullable(),
+    // Entity dimension for bucketing by a categorical field (e.g., experimentName).
+    // IMPORTANT: Unlike timeDimension which has implicit bucket limits (24 hours/day),
+    // entityDimension has NO cardinality guarantee. Callers MUST filter the same
+    // entity field in WHERE before GROUP BY runs (max ~50 values).
+    // Without this pre-filtering, GROUP BY on high-cardinality columns will be slow/OOM.
+    entityDimension: z
+      .object({
+        field: z.string(), // e.g., "experimentName"
+      })
+      .nullish(),
     fromTimestamp: stringDateTime,
     toTimestamp: stringDateTime,
     orderBy: z
@@ -190,6 +212,13 @@ export const query = z
     (query) =>
       // Ensure fromTimestamp is before toTimestamp
       new Date(query.fromTimestamp) < new Date(query.toTimestamp),
+    { message: "fromTimestamp must be before toTimestamp" },
+  )
+  .refine(
+    (query) =>
+      // timeDimension and entityDimension are mutually exclusive
+      !(query.timeDimension && query.entityDimension),
+    { message: "timeDimension and entityDimension are mutually exclusive" },
   );
 
 export const useEventsTableSchema = z
